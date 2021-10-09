@@ -1,6 +1,7 @@
 'use strict'
 
 const User = require('../models/user')
+const Follow = require('../models/follow')
 const bcrypt = require('bcrypt-nodejs')
 const jwt = require('../services/jwt')
 const mongoosePaginate = require('mongoose-pagination')
@@ -112,7 +113,7 @@ const loginUser = (req, res) => {
 }
 
 
-// metodo para obtener datos de un usuario
+// metodo para obtener datos de un usuario(cualquiera)
 const getUser = (req, res) => {
     let userId = req.params.id
 
@@ -120,10 +121,41 @@ const getUser = (req, res) => {
         if(!user) return res.status(404).send({message: 'El usuario no existe'})
         if(err) return res.status(500).send({message: 'Error en la peticion'})
         
-        return res.status(200).send({user})
+        followThisUsers(req.user.sub, userId).then((value) => {   //mostrar usuarios que estoy siguiendo y me siguen
+            user.password = undefined
+            
+            return res.status(200).send({
+                user,
+                following: value.following,
+                followed: value.followed
+            })
+        })
+        
     })
-
 }
+
+async function followThisUsers(identity_user_id, user_id) {
+    var following = await Follow.findOne({ "user":identity_user_id, "followed":user_id }).exec().then((follow) => {
+        return follow;
+    }).catch((err) => {
+        return handleError(err);
+    });
+ 
+    var followed = await Follow.findOne({ "user":user_id, "followed":identity_user_id }).exec().then((follow) => {
+        // console.log(follow);
+        return follow;
+    }).catch((err) => {
+        return handleError(err);
+    });
+ 
+ 
+    return {
+        following: following,
+        followed: followed
+    }
+}
+
+
 
 // Devolver un listado de usuarios paginados
 const getUsers = (req, res) => {
@@ -141,12 +173,80 @@ const getUsers = (req, res) => {
 
         if(!users) return res.status(404).send({ message: 'NO hay usuarios disponibles'})
 
-        return res.status(200).send({
-            users,
-            total,
-            pages: Math.ceil(total/itemsPerPage)
+        followUsersIds(identity_user_id).then(value => {
+            
+            return res.status(200).send({
+                users,
+                users_following: value.following,
+                users_follow_me: value.followed,
+                total,
+                pages: Math.ceil(total/itemsPerPage)
+            })
         })
     })
+}
+
+async function followUsersIds(user_id) {
+    var following = await Follow.find({ 'user': user_id }).select({ _id: 0, __v: 0, user: 0 })
+        .exec()
+        .then((follows) => {
+            var follows_clean = [];
+            follows.forEach((follow) => {
+                follows_clean.push(follow.followed);
+            });
+            return follows_clean;
+        })
+        .catch((err) => {
+            return handleError(err);
+        });
+
+    var followed = await Follow.find({ 'followed': user_id }).select({ _id: 0, __v: 0, 'followed': 0 })
+        .exec()
+        .then((follows) => {
+            var follows_clean = [];
+            follows.forEach((follow) => {
+                follows_clean.push(follow.user);
+            });
+            return follows_clean;
+        })
+        .catch((err) => {
+            return handleError(err);
+        });
+
+    return {
+        following: following,
+        followed: followed
+    };
+}
+
+//contador de usuarios que seguimos y que nos siguen
+const getCounters = (req, res) => {
+    let userId = req.user.sub;
+    if(req.params.id){
+        userId = req.params.id;      
+    }
+    getCountFollow(userId).then((value) => {
+        return res.status(200).send(value);
+    })
+}
+ 
+async function getCountFollow(user_id) {
+    var following = await Follow.countDocuments({ user: user_id })
+        .exec()
+        .then((count) => {
+            return count;
+        })
+        .catch((err) => { return handleError(err); });
+ 
+    var followed = await Follow.countDocuments({ followed: user_id })
+        .exec()
+        .then((count) => {
+            return count;
+        })
+        .catch((err) => { return handleError(err); });
+ 
+    return { following: following, followed: followed }
+ 
 }
 
 
@@ -240,7 +340,8 @@ module.exports = {
     loginUser,
     getUser,
     getUsers,
+    getCounters,
     updateUser,
     uploadImage,
-    getImageFile
+    getImageFile,
 }
