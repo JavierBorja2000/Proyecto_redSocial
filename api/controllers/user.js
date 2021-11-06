@@ -2,6 +2,8 @@
 
 const User = require('../models/user')
 const Follow = require('../models/follow')
+const Publication = require('../models/publication')
+
 const bcrypt = require('bcrypt-nodejs')
 const jwt = require('../services/jwt')
 const mongoosePaginate = require('mongoose-pagination')
@@ -234,6 +236,7 @@ async function getCountFollow(user_id) {
     var following = await Follow.countDocuments({ user: user_id })
         .exec()
         .then((count) => {
+            console.log(count);
             return count;
         })
         .catch((err) => { return handleError(err); });
@@ -245,8 +248,14 @@ async function getCountFollow(user_id) {
         })
         .catch((err) => { return handleError(err); });
  
-    return { following: following, followed: followed }
+    var publications = await Publication.countDocuments({ user: user_id})
+        .exec()
+        .then((count) => {
+          return count;
+        })
+        .catch((err) => { return handleError(err); });
  
+    return { following: following, followed: followed, publication: publications } 
 }
 
 
@@ -317,7 +326,7 @@ const getImageFile = (req, res) => {
     let image_file = req.params.imageFile
     let path_file = './uploads/users/' + image_file
 
-    path.exists(path_file, (exists) => {
+    fs.exists(path_file, (exists) => {
         if(exists){
             res.sendFile(path.resolve(path_file))
         }else{
